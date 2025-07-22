@@ -1,0 +1,43 @@
+{
+  "name": "pointcloud-visualizer",
+  "version": "1.0.0",
+  "description": "一个基于 Electron + Vue 的点云三维可视化桌面应用，支持CSV/PCD文件导入。",
+  "author": "张琦",
+  "dependencies": {
+    "vue": "^3.5.17",
+    "three": "^0.157.0",
+    "@vitejs/plugin-vue": "^5.0.4",
+    "vite": "^7.0.0"
+  },
+  "main": "main.js",
+  "scripts": {
+    "dev:renderer": "cd renderer && npm run dev",
+    "dev:electron": "set NODE_ENV=development&& electron .",
+    "dev": "concurrently \"npm run dev:renderer\" \"npm run dev:electron\"",
+    "build:renderer": "cd renderer && npm run build",
+    "start": "npm run build:renderer && electron .",
+    "build:electron": "npm run build:renderer && electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^29.3.3",
+    "concurrently": "^9.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.yourcompany.pointcloud",
+    "productName": "机器人喷绘可视化",
+    "directories": {
+      "output": "dist_electron"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/dist/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    }
+  }
+}
