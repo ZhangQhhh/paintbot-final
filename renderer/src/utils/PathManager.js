@@ -224,84 +224,202 @@ export class PathManager {
     
     this.raycaster.setFromCamera(this.mouse, camera)
     
-    let targetPoint = null
+    // 使用高精度深度检测
+    const targetPoint = this.getHighPrecisionIntersection(this.mouse, camera, pointCloud)
     
-    // 检测与点云的交集
-    if (pointCloud) {
-      const intersects = this.raycaster.intersectObject(pointCloud)
-      if (intersects.length > 0) {
-        // 选择合适的交点
-        if (intersects.length > 1) {
-          // 计算所有交点的深度分布，选择中等深度的点
-          const distances = intersects.map(intersect => intersect.distance)
-          const minDist = Math.min(...distances)
-          const maxDist = Math.max(...distances)
-          const targetDistance = minDist + (maxDist - minDist) * 0.4
-          
-          let bestIntersect = intersects[0]
-          let minDiff = Math.abs(intersects[0].distance - targetDistance)
-          
-          for (let i = 1; i < intersects.length; i++) {
-            const diff = Math.abs(intersects[i].distance - targetDistance)
-            if (diff < minDiff) {
-              minDiff = diff
-              bestIntersect = intersects[i]
-            }
-          }
-          
-          targetPoint = bestIntersect.point
-        } else {
-          targetPoint = intersects[0].point
+    if (targetPoint) {
+      // 如果启用了吸附功能，尝试找到最近的实际点云点
+      if (this.config.snapEnabled && pointCloud && pointCloud.geometry) {
+        const snappedPoint = this.findNearestCloudPoint(targetPoint, pointCloud)
+        if (snappedPoint) {
+          return snappedPoint
         }
+      }
+      return targetPoint
+    }
+    
+    // 如果没有找到合适的点，使用回退策略
+    return this.getFallbackIntersection(this.mouse, camera)
+  }
+
+  // 高精度深度检测
+  getHighPrecisionIntersection(mouse, camera, pointCloud) {
+    if (!pointCloud || !pointCloud.geometry || !pointCloud.geometry.attributes.position) {
+      return null
+    }
+    
+    // 设置射线投射器
+    this.raycaster.setFromCamera(mouse, camera)
+    
+    const positions = pointCloud.geometry.attributes.position.array
+    const pointsCount = positions.length / 3
+    
+    // 使用多层深度采样
+    const depthSamples = []
+    const sampleCount = 20 // 增加采样点数量
+    
+    // 在射线方向上创建多个采样点
+    const rayOrigin = this.raycaster.ray.origin
+    const rayDirection = this.raycaster.ray.direction
+    const maxDistance = camera.far || 1000
+    const minDistance = camera.near || 0.1
+    
+    for (let i = 0; i < sampleCount; i++) {
+      const t = minDistance + (maxDistance - minDistance) * (i / (sampleCount - 1))
+      const samplePoint = rayOrigin.clone().add(rayDirection.clone().multiplyScalar(t))
+      
+      // 找到这个采样点附近的点云密度
+      let nearbyPointsCount = 0
+      const searchRadius = 0.1 // 搜索半径
+      
+      for (let j = 0; j < pointsCount; j++) {
+        const cloudPoint = new THREE.Vector3(
+          positions[j * 3],
+          positions[j * 3 + 1],
+          positions[j * 3 + 2]
+        )
         
-        // 如果启用了吸附功能，尝试找到最近的实际点云点
-        if (this.config.snapEnabled && pointCloud.geometry) {
-          const snappedPoint = this.findNearestCloudPoint(targetPoint, pointCloud)
-          if (snappedPoint) {
-            targetPoint = snappedPoint
-          }
+        const distance = samplePoint.distanceTo(cloudPoint)
+        if (distance < searchRadius) {
+          nearbyPointsCount++
         }
-        
-        return targetPoint
+      }
+      
+      if (nearbyPointsCount > 0) {
+        depthSamples.push({
+          point: samplePoint,
+          density: nearbyPointsCount,
+          distance: t
+        })
       }
     }
     
-    // 如果没有点云交点，计算基于相机视角的合理深度位置
-    const cameraDistance = camera.position.length()
-    const targetDepth = cameraDistance * 0.3
+    // 如果没有找到任何密度点，使用传统方法
+    if (depthSamples.length === 0) {
+      return this.getFallbackIntersection(mouse, camera)
+    }
     
-    const direction = this.raycaster.ray.direction.clone()
-    const intersectionPoint = this.raycaster.ray.origin.clone().add(direction.multiplyScalar(targetDepth))
+    // 选择密度最高的区域作为目标深度
+    let bestSample = depthSamples[0]
+    for (let i = 1; i < depthSamples.length; i++) {
+      if (depthSamples[i].density > bestSample.density) {
+        bestSample = depthSamples[i]
+      }
+    }
     
-    return intersectionPoint
+    return bestSample.point
   }
 
-  // 查找最近的点云点
+  // 备用交点计算方法
+  getFallbackIntersection(mouse, camera) {
+    this.raycaster.setFromCamera(mouse, camera)
+    const cameraDistance = camera.position.length()
+    const targetDepth = cameraDistance * 0.4 // 稍微调整深度比例
+    const direction = this.raycaster.ray.direction.clone()
+    return this.raycaster.ray.origin.clone().add(direction.multiplyScalar(targetDepth))
+  }
+
+  // 优化的最近点查找算法
   findNearestCloudPoint(targetPoint, pointCloud) {
     if (!pointCloud.geometry || !pointCloud.geometry.attributes.position) {
       return null
     }
     
     const positions = pointCloud.geometry.attributes.position.array
+    const pointsCount = positions.length / 3
     let nearestPoint = null
     let minDistance = this.config.snapDistance
     
-    // 遍历所有点云点，找到最近的点
-    for (let i = 0; i < positions.length; i += 3) {
+    // 使用更智能的搜索策略
+    const candidates = []
+    
+    // 第一步：收集候选点
+    for (let i = 0; i < pointsCount; i++) {
       const cloudPoint = new THREE.Vector3(
-        positions[i],
-        positions[i + 1], 
-        positions[i + 2]
+        positions[i * 3],
+        positions[i * 3 + 1], 
+        positions[i * 3 + 2]
       )
       
       const distance = targetPoint.distanceTo(cloudPoint)
-      if (distance < minDistance) {
-        minDistance = distance
-        nearestPoint = cloudPoint
+      
+      if (distance < this.config.snapDistance * 3) { // 扩大初步筛选范围
+        candidates.push({
+          point: cloudPoint,
+          distance: distance
+        })
       }
     }
     
-    return nearestPoint
+    // 第二步：从候选点中选择最优的
+    if (candidates.length > 0) {
+      // 按距离排序
+      candidates.sort((a, b) => a.distance - b.distance)
+      
+      // 选择最近的点，但要考虑周围点的密度
+      let bestCandidate = candidates[0]
+      
+      // 如果有多个相近的候选点，选择周围密度最高的
+      if (candidates.length > 1) {
+        for (let i = 0; i < Math.min(5, candidates.length); i++) {
+          const candidate = candidates[i]
+          let nearbyCount = 0
+          
+          // 计算周围点的密度
+          for (let j = 0; j < candidates.length; j++) {
+            if (i !== j) {
+              const dist = candidate.point.distanceTo(candidates[j].point)
+              if (dist < 0.05) { // 很小的邻域
+                nearbyCount++
+              }
+            }
+          }
+          
+          // 如果这个点周围有更多的邻近点，且距离差不大，优先选择它
+          if (nearbyCount > 2 && candidate.distance < bestCandidate.distance * 1.5) {
+            bestCandidate = candidate
+          }
+        }
+      }
+      
+      return bestCandidate.point
+    }
+    
+    return null
+  }
+
+  // 添加视觉反馈方法
+  addVisualFeedback(point, color = 0x00ff00, duration = 1000) {
+    // 创建临时的视觉反馈球体
+    const geometry = new THREE.SphereGeometry(this.config.sphereSize * 1.5, 8, 8)
+    const material = new THREE.MeshBasicMaterial({ 
+      color: color,
+      transparent: true,
+      opacity: 0.7
+    })
+    const feedbackSphere = new THREE.Mesh(geometry, material)
+    feedbackSphere.position.copy(point)
+    this.scene.add(feedbackSphere)
+    
+    // 添加脉冲动画
+    let scale = 1
+    const animate = () => {
+      scale += 0.1
+      feedbackSphere.scale.setScalar(scale)
+      feedbackSphere.material.opacity = Math.max(0, 0.7 - (scale - 1) * 0.7)
+      
+      if (scale < 2) {
+        requestAnimationFrame(animate)
+      } else {
+        this.scene.remove(feedbackSphere)
+        geometry.dispose()
+        material.dispose()
+      }
+    }
+    
+    setTimeout(() => {
+      animate()
+    }, 100)
   }
 
   // 保存路径数据

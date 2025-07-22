@@ -139,13 +139,25 @@ function onMouseDoubleClick(event) {
   // 只在绘制模式下双击添加点
   if (!drawingMode.value || !pathManager) return
   
-  const point = pathManager.getIntersectionPoint(event, camera, points, container.value)
-  if (point) {
-    pathManager.addPointToPath(point)
+  const mouse = new THREE.Vector2()
+  mouse.x = (event.clientX / window.innerWidth) * 2 - 1
+  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1
+  
+  // 使用高精度交点检测
+  const intersection = pathManager.getHighPrecisionIntersection(mouse, camera, points)
+  
+  if (intersection) {
+    // 添加视觉反馈
+    pathManager.addVisualFeedback(intersection, 0x00ff00, 500)
+    
+    // 添加路径点
+    pathManager.addPointToPath(intersection)
     updatePaths()
     
     // 给予视觉反馈
-    console.log(`添加点: (${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)})`)
+    console.log(`添加点: (${intersection.x.toFixed(3)}, ${intersection.y.toFixed(3)}, ${intersection.z.toFixed(3)})`)
+  } else {
+    console.log('无法找到有效的交点')
   }
 }
 
@@ -516,7 +528,7 @@ onMounted(() => {
   // 初始化路径管理器 - 添加配置选项
   pathManager = new PathManager(scene, {
     sphereSize: 0.08,        // 稍大一些的球体便于看清
-    snapDistance: 0.15,      // 合理的吸附距离
+    snapDistance: 0.08,      // 更精确的吸附距离
     snapEnabled: true,       // 启用点云吸附
     lineWidth: 3,           // 线条宽度
     pointColor: 0xff4444    // 红色点
