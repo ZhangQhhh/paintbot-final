@@ -23,7 +23,7 @@ const saveSettings = (settings) => {
 // 默认设置
 const defaultSettings = {
   autoRotate: true,
-  showAxis: false,
+  showAxis: true,  // 默认显示坐标轴
   pointSize: 8, // 设置更小的默认值
   renderQuality: 'medium'
 }

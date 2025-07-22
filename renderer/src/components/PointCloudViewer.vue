@@ -9,70 +9,24 @@
       </button>
       
       <!-- 路径规划工具栏 -->
-      <PathPlanningToolbarNew
+      <PathPlanningToolbar 
         :drawing-mode="drawingMode"
         :paths="paths"
-        :current-path="currentPath"
-        @toggle-drawing-mode="toggleDrawingMode"
         @clear-paths="clearPaths"
-        @undo-point="undoLastPoint"
-        @load-paths="loadPaths"
         @save-paths="savePaths"
-        @update-draw-mode="updateDrawMode"
-        @update-draw-plane="updateDrawPlane"
-        @connect-paths="connectPaths"
-        @optimize-paths="optimizePaths"
-        @smooth-paths="smoothPaths"
+        @load-paths="loadPaths"
       />
     </div>
     
     <!-- 路径信息面板 -->
-    <PathInfoPanelNew
+    <PathInfoPanel 
       :paths="paths"
       @highlight-path="highlightPath"
       @delete-path="deletePath"
       @edit-path="editPath"
-      @duplicate-path="duplicatePath"
-      @reverse-path="reversePath"
-      @export-path="exportPath"
-      @export-selected="exportSelectedPaths"
+      @update-path-config="updatePathConfig"
     />
-
-    <!-- 路径样式编辑器 -->
-    <div v-if="showStyleEditor" class="style-editor-overlay">
-      <div class="style-editor-modal">
-        <div class="modal-header">
-          <h3>编辑路径样式</h3>
-          <button @click="closeStyleEditor" class="close-btn">×</button>
-        </div>
-        <PathStyleEditor
-          :selected-path="selectedPathForEdit"
-          :path-index="selectedPathIndex"
-          @update-style="updatePathStyle"
-          @update-name="updatePathName"
-          @update-animation="updatePathAnimation"
-          @duplicate-path="duplicatePath"
-          @reverse-path="reversePath"
-          @smooth-path="smoothPath"
-          @delete-path="deletePath"
-        />
-      </div>
-    </div>
-
-    <!-- 坐标系控制面板 -->
-    <div v-if="showCoordinateControls" class="coordinate-controls-overlay">
-      <CoordinateControls
-        :coordinate-system="axesHelper"
-        @update-visibility="updateAxisVisibility"
-        @update-size="updateAxisSize"
-        @update-position="updateAxisPosition"
-        @update-rotation="updateAxisRotation"
-        @update-scale="updateAxisScale"
-        @update-colors="updateAxisColors"
-        @reset="resetCoordinateSystem"
-      />
-    </div>
-
+    
     <div ref="container" class="pointcloud-viewer"></div>
   </div>
 </template>
@@ -82,11 +36,9 @@ import { onMounted, ref, onBeforeUnmount, computed, watch } from 'vue'
 import { useStore } from 'vuex'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
-import PathPlanningToolbarNew from './PathPlanningToolbarNew.vue'
-import PathInfoPanelNew from './PathInfoPanelNew.vue'
-import PathStyleEditor from './PathStyleEditor.vue'
-import CoordinateControls from './CoordinateControls.vue'
-import { Path3DManager } from '../utils/Path3DManager.js'
+import PathPlanningToolbar from './PathPlanningToolbar.vue'
+import PathInfoPanel from './PathInfoPanel.vue'
+import { PathManager } from '../utils/PathManager.js'
 
 const store = useStore()
 const container = ref(null)
@@ -96,10 +48,9 @@ let renderer, scene, camera, animationId, points, controls, resizeObserver, axes
 const drawingMode = ref(false)
 const paths = ref([])
 const currentPath = ref(null)
-const showStyleEditor = ref(false)
-const showCoordinateControls = ref(true)
 const selectedPathForEdit = ref(null)
 const selectedPathIndex = ref(-1)
+const showStyleEditor = ref(false)
 let pathManager = null
 
 // 从 Vuex store 获取设置
@@ -142,66 +93,59 @@ function toggleDrawingMode() {
   if (pathManager) {
     drawingMode.value = pathManager.toggleDrawingMode()
     if (drawingMode.value) {
-      controls.enabled = false
+      // 在绘制模式下保持所有相机控制功能
+      controls.enabled = true
       container.value.style.cursor = 'crosshair'
+      
+      // 保持正常的鼠标控制，通过双击来添加点
+      controls.mouseButtons = {
+        LEFT: THREE.MOUSE.ROTATE,   // 左键仍然用于旋转
+        MIDDLE: THREE.MOUSE.DOLLY,  // 滚轮缩放
+        RIGHT: THREE.MOUSE.PAN      // 右键平移
+      }
+      
+      console.log('划线模式已开启 - 双击添加点，拖拽控制视角，滚轮缩放')
     } else {
       controls.enabled = true
       container.value.style.cursor = 'default'
+      
+      // 恢复正常的鼠标控制（实际上已经是正常的了）
+      controls.mouseButtons = {
+        LEFT: THREE.MOUSE.ROTATE,   // 左键旋转
+        MIDDLE: THREE.MOUSE.DOLLY,  // 滚轮缩放
+        RIGHT: THREE.MOUSE.PAN      // 右键平移
+      }
+      
+      console.log('划线模式已关闭')
     }
     updatePaths()
   }
 }
 
-function undoLastPoint() {
-  if (pathManager && pathManager.currentPath && pathManager.currentPath.points.length > 0) {
-    pathManager.currentPath.points.pop()
-    if (pathManager.currentPath.spheres.length > 0) {
-      const sphere = pathManager.currentPath.spheres.pop()
-      scene.remove(sphere)
-      sphere.geometry.dispose()
-      sphere.material.dispose()
-    }
-    pathManager.updatePathLine()
-    pathManager.updatePathDistance()
-    updatePaths()
+// 键盘事件处理
+function onKeyDown(event) {
+  // 防止在输入框中触发
+  if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+    return
+  }
+  
+  if (event.key === 'w' || event.key === 'W') {
+    event.preventDefault()
+    toggleDrawingMode()
   }
 }
 
-function updateDrawMode(mode) {
-  console.log('绘制模式更新为:', mode)
-  // 根据模式调整绘制行为
-}
-
-function updateDrawPlane(planeNormal) {
-  if (pathManager) {
-    const normal = new THREE.Vector3(planeNormal.x, planeNormal.y, planeNormal.z)
-    const point = new THREE.Vector3(0, 0, 0) // 可以根据需要调整平面位置
-    pathManager.setDrawingPlane(normal, point)
-  }
-}
-
-function connectPaths() {
-  console.log('连接路径功能')
-  // 实现路径连接逻辑
-}
-
-function optimizePaths() {
-  console.log('优化路径功能')
-  // 实现路径优化逻辑
-}
-
-function smoothPaths() {
-  console.log('平滑路径功能')
-  // 实现路径平滑逻辑
-}
-
-function onMouseClick(event) {
+function onMouseDoubleClick(event) {
+  // 只在绘制模式下双击添加点
   if (!drawingMode.value || !pathManager) return
   
   const point = pathManager.getIntersectionPoint(event, camera, points, container.value)
   if (point) {
     pathManager.addPointToPath(point)
     updatePaths()
+    
+    // 给予视觉反馈
+    console.log(`添加点: (${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)})`)
   }
 }
 
@@ -226,128 +170,9 @@ function highlightPath(index) {
 }
 
 function editPath(index) {
-  selectedPathIndex.value = index
-  selectedPathForEdit.value = paths.value[index]
-  showStyleEditor.value = true
-}
-
-function closeStyleEditor() {
-  showStyleEditor.value = false
-  selectedPathForEdit.value = null
-  selectedPathIndex.value = -1
-}
-
-function updatePathStyle(pathIndex, newStyle) {
-  if (pathManager) {
-    pathManager.updatePathStyle(pathIndex, newStyle)
-    updatePaths()
-  }
-}
-
-function updatePathName(pathIndex, newName) {
-  if (pathManager && pathManager.paths[pathIndex]) {
-    pathManager.paths[pathIndex].name = newName
-    updatePaths()
-  }
-}
-
-function updatePathAnimation(pathIndex, animationType) {
-  console.log(`更新路径 ${pathIndex} 的动画类型为: ${animationType}`)
-  // 实现动画效果
-}
-
-function duplicatePath(index) {
-  if (pathManager && pathManager.paths[index]) {
-    const originalPath = pathManager.paths[index]
-    const newPath = {
-      ...originalPath,
-      id: pathManager.pathId++,
-      name: `${originalPath.name} (副本)`,
-      points: [...originalPath.points],
-      spheres: [],
-      line: null,
-      tube: null,
-      created: new Date()
-    }
-    
-    // 重建可视化
-    pathManager.currentPath = newPath
-    if (newPath.style.showPoints) {
-      newPath.points.forEach(point => {
-        pathManager.addPointSphere(point, newPath.style)
-      })
-    }
-    if (newPath.points.length >= 2) {
-      pathManager.create3DPath()
-    }
-    
-    pathManager.paths.push({ ...newPath })
-    pathManager.currentPath = null
-    updatePaths()
-  }
-}
-
-function reversePath(index) {
-  if (pathManager && pathManager.paths[index]) {
-    const path = pathManager.paths[index]
-    path.points.reverse()
-    pathManager.recreatePathVisuals(path)
-    updatePaths()
-  }
-}
-
-function smoothPath(index) {
-  console.log(`平滑路径 ${index}`)
-  // 实现单个路径平滑逻辑
-}
-
-function exportPath(index) {
-  if (pathManager && pathManager.paths[index]) {
-    try {
-      const singlePathData = {
-        version: '2.0',
-        created: new Date().toISOString(),
-        paths: [pathManager.paths[index]]
-      }
-      
-      const exportData = pathManager.exportPaths('json')
-      exportData.content = JSON.stringify(singlePathData, null, 2)
-      
-      downloadFile(exportData.content, exportData.filename, exportData.mimeType)
-    } catch (error) {
-      alert('导出失败: ' + error.message)
-    }
-  }
-}
-
-function exportSelectedPaths(selectedIndices) {
-  if (pathManager && selectedIndices.length > 0) {
-    try {
-      const selectedPaths = selectedIndices.map(index => pathManager.paths[index])
-      const exportData = {
-        version: '2.0',
-        created: new Date().toISOString(),
-        paths: selectedPaths
-      }
-      
-      const content = JSON.stringify(exportData, null, 2)
-      const filename = `选中路径_${new Date().toISOString().slice(0, 10)}.json`
-      
-      downloadFile(content, filename, 'application/json')
-    } catch (error) {
-      alert('导出失败: ' + error.message)
-    }
-  }
-}
-
-function downloadFile(content, filename, mimeType) {
-  const blob = new Blob([content], { type: mimeType })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
+  // 简化编辑功能，只是高亮显示
+  highlightPath(index)
+  console.log('编辑路径:', index)
 }
 
 function savePaths(format = 'json') {
@@ -376,6 +201,23 @@ function updatePaths() {
     paths.value = [...pathManager.paths]
     currentPath.value = pathManager.currentPath
   }
+}
+
+function updatePathConfig(config) {
+  if (pathManager) {
+    pathManager.updateConfig(config)
+    console.log('路径配置已更新:', config)
+  }
+}
+
+function downloadFile(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 // 坐标系控制函数
@@ -671,9 +513,18 @@ onMounted(() => {
   controls.autoRotate = autoRotate.value
   controls.autoRotateSpeed = 2.0
 
-    // 初始化路径管理器
-    pathManager = new Path3DManager(scene)  // 添加鼠标事件监听
-  container.value.addEventListener('click', onMouseClick)
+  // 初始化路径管理器 - 添加配置选项
+  pathManager = new PathManager(scene, {
+    sphereSize: 0.08,        // 稍大一些的球体便于看清
+    snapDistance: 0.15,      // 合理的吸附距离
+    snapEnabled: true,       // 启用点云吸附
+    lineWidth: 3,           // 线条宽度
+    pointColor: 0xff4444    // 红色点
+  })
+  
+  // 添加事件监听
+  container.value.addEventListener('dblclick', onMouseDoubleClick)
+  window.addEventListener('keydown', onKeyDown)
   
   // 加载保存的路径
   pathManager.loadSavedPaths()
@@ -710,7 +561,8 @@ onBeforeUnmount(() => {
   cancelAnimationFrame(animationId)
   renderer && renderer.dispose()
   clearScene()
-  container.value?.removeEventListener('click', onMouseClick)
+  container.value?.removeEventListener('dblclick', onMouseDoubleClick)
+  window.removeEventListener('keydown', onKeyDown)
   if (pathManager) {
     pathManager.dispose()
     pathManager = null

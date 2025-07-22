@@ -1,104 +1,125 @@
 <template>
-  <div class="path-info-panel">
-    <!-- 路径统计 -->
-    <div v-if="paths.length > 0" class="path-summary">
-      <h4>路径统计</h4>
-      <div class="summary-grid">
-        <div class="summary-item">
-          <span class="label">路径数量:</span>
-          <span class="value">{{ paths.length }} 条</span>
-        </div>
-        <div class="summary-item">
-          <span class="label">总距离:</span>
-          <span class="value">{{ totalDistance.toFixed(3) }} 单位</span>
-        </div>
-        <div class="summary-item">
-          <span class="label">总点数:</span>
-          <span class="value">{{ totalPoints }} 个</span>
-        </div>
-        <div class="summary-item">
-          <span class="label">平均长度:</span>
-          <span class="value">{{ averageDistance.toFixed(3) }} 单位</span>
-        </div>
+  <div class="path-info-panel" :class="{ collapsed: isCollapsed }">
+    <!-- 折叠控制头部 -->
+    <div class="panel-header" @click="toggleCollapse">
+      <div class="header-left">
+        <div class="panel-icon">📍</div>
+        <h4 class="panel-title">路径信息</h4>
+        <span class="path-count">{{ paths.length }}</span>
       </div>
+      <button class="collapse-btn" :class="{ active: !isCollapsed }">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/>
+        </svg>
+      </button>
     </div>
 
-    <!-- 路径列表 -->
-    <div v-if="paths.length > 0" class="path-list">
-      <h4>路径列表</h4>
-      <div class="list-controls">
-        <button @click="selectAll" class="control-btn">全选</button>
-        <button @click="selectNone" class="control-btn">取消</button>
-        <button @click="exportSelected" class="control-btn export">导出选中</button>
+    <!-- 可折叠内容 -->
+    <div class="panel-content" v-show="!isCollapsed">
+      <!-- 路径统计 -->
+      <div v-if="paths.length > 0" class="path-summary">
+        <div class="summary-grid">
+          <div class="summary-item">
+            <span class="summary-label">总路径</span>
+            <span class="summary-value">{{ paths.length }}</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">总距离</span>
+            <span class="summary-value">{{ totalDistance.toFixed(2) }}</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">总点数</span>
+            <span class="summary-value">{{ totalPoints }}</span>
+          </div>
+        </div>
       </div>
-      
-      <div 
-        v-for="(path, index) in paths" 
-        :key="path.id || index" 
-        class="path-item"
-        :class="{ 
-          highlighted: highlightedIndex === index,
-          selected: selectedPaths.includes(index)
-        }"
-        @click="selectPath(index)"
-      >
-        <div class="path-header">
-          <div class="path-checkbox">
-            <input 
-              type="checkbox" 
-              :checked="selectedPaths.includes(index)"
-              @change="togglePathSelection(index)"
-              @click.stop
-            />
-          </div>
-          <div class="path-color" :style="{ backgroundColor: getPathColor(path) }"></div>
-          <div class="path-title">
-            <span class="path-name">{{ path.name || `路径 ${index + 1}` }}</span>
-            <span class="path-date">{{ formatDate(path.created) }}</span>
-          </div>
-          <div class="path-menu">
-            <button @click.stop="togglePathMenu(index)" class="menu-btn">⋮</button>
-            <div v-if="openMenuIndex === index" class="menu-dropdown">
-              <button @click.stop="editPath(index)">编辑样式</button>
-              <button @click.stop="duplicatePath(index)">复制路径</button>
-              <button @click.stop="reversePath(index)">反向路径</button>
-              <button @click.stop="exportPath(index)">单独导出</button>
-              <button @click.stop="deletePath(index)" class="delete">删除</button>
+
+      <!-- 路径列表 -->
+      <div v-if="paths.length > 0" class="path-list">
+        <div class="list-controls">
+          <button @click="selectAll" class="control-btn primary">全选</button>
+          <button @click="selectNone" class="control-btn">清除</button>
+          <button @click="exportSelected" class="control-btn success">导出</button>
+        </div>
+        
+        <!-- 路径显示设置 -->
+        <div class="path-settings">
+          <div class="setting-item">
+            <label class="setting-label">路径点大小</label>
+            <div class="setting-control">
+              <input 
+                type="range" 
+                min="0.02" 
+                max="0.15" 
+                step="0.01" 
+                :value="sphereSize"
+                @input="updateSphereSize"
+                class="size-slider"
+              />
+              <span class="size-value">{{ (sphereSize * 100).toFixed(0) }}%</span>
             </div>
+          </div>
+          <div class="setting-item">
+            <label class="setting-label">
+              <input 
+                type="checkbox" 
+                :checked="snapEnabled"
+                @change="toggleSnapEnabled"
+                class="snap-checkbox"
+              />
+              自动吸附点云
+            </label>
           </div>
         </div>
         
-        <div class="path-details">
-          <div class="detail-row">
-            <span class="detail-label">点数:</span>
-            <span class="detail-value">{{ path.points.length }}</span>
-            <span class="detail-label">距离:</span>
-            <span class="detail-value">{{ path.distance.toFixed(3) }}</span>
+        <div class="paths-container">
+          <div 
+            v-for="(path, index) in paths" 
+            :key="path.id || index" 
+            class="path-item"
+            :class="{ 
+              highlighted: highlightedIndex === index,
+              selected: selectedPaths.includes(index)
+            }"
+            @click="selectPath(index)"
+          >
+            <div class="path-main">
+              <input 
+                type="checkbox" 
+                :checked="selectedPaths.includes(index)"
+                @change="togglePathSelection(index)"
+                @click.stop
+                class="path-checkbox"
+              />
+              <div class="path-color" :style="{ backgroundColor: getPathColor(path) }"></div>
+              <div class="path-details">
+                <span class="path-name">路径 {{ index + 1 }}</span>
+                <span class="path-stats">{{ path.points.length }} 点 · {{ path.distance.toFixed(1) }} 单位</span>
+              </div>
+              <div class="path-actions">
+                <button @click.stop="editPath(index)" class="action-btn edit" title="编辑">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z"/>
+                    <path fill-rule="evenodd" d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5v11z"/>
+                  </svg>
+                </button>
+                <button @click.stop="deletePath(index)" class="action-btn delete" title="删除">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5ZM11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H2.506a.58.58 0 0 0-.01 0H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1h-.995a.59.59 0 0 0-.01 0H11Zm1.958 1-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5h9.916Zm-7.487 1a.5.5 0 0 1 .528.47l.5 8.5a.5.5 0 0 1-.998.06L5 5.03a.5.5 0 0 1 .47-.53Zm5.058 0a.5.5 0 0 1 .47.53l-.5 8.5a.5.5 0 1 1-.998-.06l.5-8.5a.5.5 0 0 1 .528-.47ZM8 4.5a.5.5 0 0 1 .5.5v8.5a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5Z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
-          <div class="detail-row">
-            <span class="detail-label">类型:</span>
-            <span class="detail-value">{{ getPathTypeText(path.style?.type) }}</span>
-            <span class="detail-label">宽度:</span>
-            <span class="detail-value">{{ path.style?.lineWidth || 3 }}px</span>
-          </div>
-        </div>
-
-        <div class="path-preview">
-          <canvas 
-            :ref="el => pathCanvases[index] = el"
-            width="200" 
-            height="60"
-            class="preview-canvas"
-          ></canvas>
         </div>
       </div>
-    </div>
 
-    <!-- 空状态 -->
-    <div v-else class="empty-state">
-      <div class="empty-icon">📍</div>
-      <h4>还没有路径</h4>
-      <p>开始绘制路径来规划您的轨迹</p>
+      <!-- 空状态 -->
+      <div v-else class="empty-state">
+        <div class="empty-icon">🎯</div>
+        <p class="empty-text">按 W 开始绘制路径</p>
+        <p class="empty-hint">双击点云添加路径点</p>
+      </div>
     </div>
   </div>
 </template>
@@ -120,13 +141,19 @@ const emit = defineEmits([
   'duplicate-path',
   'reverse-path',
   'export-path',
-  'export-selected'
+  'export-selected',
+  'update-path-config'
 ])
 
 const highlightedIndex = ref(-1)
 const selectedPaths = ref([])
 const openMenuIndex = ref(-1)
 const pathCanvases = ref([])
+const isCollapsed = ref(false) // 添加折叠状态
+
+// 路径显示配置
+const sphereSize = ref(0.08)
+const snapEnabled = ref(true)
 
 // 计算属性
 const totalDistance = computed(() => {
@@ -142,6 +169,9 @@ const averageDistance = computed(() => {
 })
 
 // 方法
+function toggleCollapse() {
+  isCollapsed.value = !isCollapsed.value
+}
 function selectPath(index) {
   highlightedIndex.value = index
   emit('highlight-path', index)
@@ -213,6 +243,21 @@ function exportSelected() {
     return
   }
   emit('export-selected', selectedPaths.value)
+}
+
+// 路径显示配置方法
+function updateSphereSize(event) {
+  sphereSize.value = parseFloat(event.target.value)
+  emit('update-path-config', {
+    sphereSize: sphereSize.value
+  })
+}
+
+function toggleSnapEnabled(event) {
+  snapEnabled.value = event.target.checked
+  emit('update-path-config', {
+    snapEnabled: snapEnabled.value
+  })
 }
 
 function getPathColor(path) {
@@ -328,118 +373,409 @@ watch(() => props.paths, () => {
 onMounted(() => {
   document.addEventListener('click', closeAllMenus)
 })
+
+
 </script>
 
-function highlightPath(index) {
-  highlightedIndex.value = index
-  emit('highlight-path', index)
-}
 
-function deletePath(index) {
-  if (confirm(`确定要删除路径 ${index + 1} 吗？`)) {
-    emit('delete-path', index)
-    if (highlightedIndex.value === index) {
-      highlightedIndex.value = -1
-    }
-  }
-}
 
-function editPath(index) {
-  emit('edit-path', index)
-}
-</script>
 
 <style scoped>
-.path-info {
+.path-info-panel {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 320px;
   background: rgba(255, 255, 255, 0.95);
-  border-radius: 8px;
-  padding: 15px;
-  margin-bottom: 15px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-  max-width: 100%;
+  backdrop-filter: blur(10px);
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(183, 216, 246, 0.3);
+  border: 1px solid rgba(66, 184, 131, 0.1);
+  overflow: hidden;
+  transition: all 0.3s ease;
+  z-index: 100;
 }
 
-.path-summary {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 10px;
-  font-weight: bold;
-  color: #495057;
-  font-size: 14px;
+.path-info-panel.collapsed {
+  height: 60px;
 }
 
-.path-list {
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-.path-item {
+.panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px;
-  border: 1px solid #dee2e6;
-  border-radius: 4px;
-  margin-bottom: 5px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #f8fbff 0%, #eef7ff 100%);
+  border-bottom: 1px solid rgba(66, 184, 131, 0.1);
   cursor: pointer;
-  transition: all 0.2s;
+  user-select: none;
+  transition: background 0.2s ease;
+}
+
+.panel-header:hover {
+  background: linear-gradient(135deg, #eef7ff 0%, #e3f2ff 100%);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.panel-icon {
+  font-size: 20px;
+  color: #42b883;
+}
+
+.panel-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0;
+}
+
+.path-count {
+  background: linear-gradient(90deg, #42b883 0%, #7ed6df 100%);
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 12px;
+  min-width: 20px;
+  text-align: center;
+}
+
+.collapse-btn {
+  background: none;
+  border: none;
+  color: #6c7a89;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.collapse-btn:hover {
+  background: rgba(66, 184, 131, 0.1);
+  color: #42b883;
+}
+
+.collapse-btn.active {
+  transform: rotate(180deg);
+}
+
+.panel-content {
+  padding: 0;
+  transition: all 0.3s ease;
+}
+
+.path-summary {
+  padding: 16px 20px;
+  background: rgba(248, 251, 255, 0.5);
+  border-bottom: 1px solid rgba(66, 184, 131, 0.08);
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+}
+
+.summary-item {
+  text-align: center;
+}
+
+.summary-label {
+  display: block;
+  font-size: 12px;
+  color: #6c7a89;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.summary-value {
+  display: block;
+  font-size: 18px;
+  font-weight: 700;
+  color: #2c3e50;
+}
+
+.path-list {
+  padding: 16px 20px 20px;
+}
+
+.list-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.control-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  background: white;
+  color: #6c7a89;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.control-btn:hover {
+  background: #f8f9fa;
+  border-color: #42b883;
+  color: #42b883;
+}
+
+.control-btn.primary {
+  background: linear-gradient(90deg, #42b883 0%, #7ed6df 100%);
+  color: white;
+  border-color: #42b883;
+}
+
+.control-btn.primary:hover {
+  background: #7ed6df;
+}
+
+.control-btn.success {
+  background: #42b883;
+  color: white;
+  border-color: #42b883;
+}
+
+.control-btn.success:hover {
+  background: #369870;
+}
+
+.path-settings {
+  background: rgba(248, 251, 255, 0.5);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(66, 184, 131, 0.1);
+}
+
+.setting-item {
+  margin-bottom: 8px;
+}
+
+.setting-item:last-child {
+  margin-bottom: 0;
+}
+
+.setting-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: #2c3e50;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+.setting-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.size-slider {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: #dee2e6;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.size-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: linear-gradient(90deg, #42b883 0%, #7ed6df 100%);
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.size-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: linear-gradient(90deg, #42b883 0%, #7ed6df 100%);
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.size-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: #42b883;
+  min-width: 32px;
+  text-align: right;
+}
+
+.snap-checkbox {
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  accent-color: #42b883;
+  cursor: pointer;
+}
+
+.paths-container {
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 0 -4px;
+  padding: 0 4px;
+}
+
+.paths-container::-webkit-scrollbar {
+  width: 4px;
+}
+
+.paths-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.paths-container::-webkit-scrollbar-thumb {
+  background: rgba(66, 184, 131, 0.3);
+  border-radius: 2px;
+}
+
+.paths-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(66, 184, 131, 0.5);
+}
+
+.path-item {
+  border: 1px solid rgba(222, 226, 230, 0.6);
+  border-radius: 12px;
+  background: white;
+  margin-bottom: 8px;
+  transition: all 0.2s ease;
+  cursor: pointer;
 }
 
 .path-item:hover {
-  background: #f8f9fa;
-  border-color: #007bff;
+  background: rgba(248, 251, 255, 0.8);
+  border-color: #42b883;
+  box-shadow: 0 2px 8px rgba(66, 184, 131, 0.15);
 }
 
 .path-item.highlighted {
-  background: #e7f3ff;
-  border-color: #007bff;
+  background: rgba(66, 184, 131, 0.08);
+  border-color: #42b883;
+}
+
+.path-item.selected {
+  background: rgba(126, 214, 223, 0.1);
+  border-color: #7ed6df;
+}
+
+.path-main {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  gap: 12px;
+}
+
+.path-checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: #42b883;
+  cursor: pointer;
+}
+
+.path-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
 }
 
 .path-details {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex: 1;
+  min-width: 0;
 }
 
 .path-name {
-  font-weight: bold;
-  color: #495057;
+  display: block;
+  font-weight: 600;
+  color: #2c3e50;
+  font-size: 14px;
+  margin-bottom: 2px;
 }
 
-.path-points, .path-distance {
+.path-stats {
+  display: block;
   font-size: 12px;
-  color: #6c757d;
+  color: #6c7a89;
 }
 
 .path-actions {
   display: flex;
-  gap: 5px;
+  gap: 4px;
 }
 
 .action-btn {
+  width: 32px;
+  height: 32px;
   border: none;
-  border-radius: 3px;
-  padding: 4px 8px;
-  font-size: 12px;
+  border-radius: 8px;
+  background: transparent;
+  color: #6c7a89;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.edit-btn {
-  background: #007bff;
-  color: white;
+.action-btn:hover {
+  background: rgba(66, 184, 131, 0.1);
+  color: #42b883;
 }
 
-.edit-btn:hover {
-  background: #0056b3;
+.action-btn.edit:hover {
+  background: rgba(52, 152, 219, 0.1);
+  color: #3498db;
 }
 
-.delete-btn {
-  background: #dc3545;
-  color: white;
+.action-btn.delete:hover {
+  background: rgba(231, 76, 60, 0.1);
+  color: #e74c3c;
 }
 
-.delete-btn:hover {
-  background: #c82333;
+.empty-state {
+  padding: 40px 20px;
+  text-align: center;
+  color: #6c7a89;
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.6;
+}
+
+.empty-text {
+  font-size: 16px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0 0 8px 0;
+}
+
+.empty-hint {
+  font-size: 14px;
+  color: #6c7a89;
+  margin: 0;
 }
 </style>

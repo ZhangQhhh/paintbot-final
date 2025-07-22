@@ -1,12 +1,8 @@
 <template>
   <div class="path-tools">
-    <button 
-      class="tool-btn" 
-      :class="{ active: drawingMode }" 
-      @click="toggleDrawingMode"
-    >
-      {{ drawingMode ? '退出划线' : '开始划线' }}
-    </button>
+    <div class="drawing-status" :class="{ active: drawingMode }">
+      {{ drawingMode ? '📝 划线模式 (双击添加点，W退出)' : '🎯 按W开始划线' }}
+    </div>
     <button class="tool-btn" @click="clearPaths">清除路径</button>
     <button class="tool-btn" @click="savePaths">保存路径</button>
     <button class="tool-btn" @click="loadPaths">加载路径</button>
@@ -26,15 +22,10 @@ const props = defineProps({
 })
 
 const emit = defineEmits([
-  'toggle-drawing-mode',
   'clear-paths', 
   'save-paths',
   'load-paths'
 ])
-
-function toggleDrawingMode() {
-  emit('toggle-drawing-mode')
-}
 
 function clearPaths() {
   if (props.paths.length === 0) {
@@ -83,6 +74,30 @@ function loadPaths() {
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.drawing-status {
+  background: #f8f9fa;
+  color: #495057;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.drawing-status.active {
+  background: #28a745;
+  color: white;
+  border-color: #28a745;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.7; }
+  100% { opacity: 1; }
 }
 
 .tool-btn {
