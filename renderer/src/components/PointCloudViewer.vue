@@ -74,7 +74,7 @@ watch(showAxis, (newValue) => {
 
 watch(pointSize, (newValue) => {
   if (points && points.material) {
-    points.material.size = newValue * 0.03 // 保持与渲染时相同的比例
+    points.material.size = newValue * 0.015 // 保持与渲染时相同的比例
   }
 })
 
@@ -399,7 +399,7 @@ function renderPoints(vertices) {
 
   // 使用圆形纹理的点材质 - 精细化显示
   const material = new THREE.PointsMaterial({ 
-    size: pointSize.value * 0.03, // 调整比例，让小数值也有效果
+    size: pointSize.value * 0.015, // 调整比例，让小数值也有效果
     vertexColors: true,
     map: texture,
     transparent: true,
